@@ -1,0 +1,12 @@
+[package]
+name = "experiment_windows_memory"
+version = "0.1.0"
+authors = ["malwrar <malwrar@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+bytesize = "1.0.1"
+time = "0.2.16"
+
+[target."cfg(windows)".dependencies]
+winapi = { version = "0.3", features = ["basetsd", "minwindef", "sysinfoapi", "memoryapi", "winnt", "processthreadsapi"] }
