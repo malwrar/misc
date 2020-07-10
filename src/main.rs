@@ -3,6 +3,7 @@ use time::{Instant, Duration};
 use bytesize::ByteSize;
 use winapi::shared::basetsd::SIZE_T;
 use winapi::shared::minwindef::{LPCVOID, LPVOID, BOOL, FALSE, DWORD};
+use winapi::um::handleapi::CloseHandle;
 use winapi::um::memoryapi::{VirtualQueryEx, ReadProcessMemory};
 use winapi::um::processthreadsapi::OpenProcess;
 //use winapi::um::sysinfoapi::{GetNativeSystemInfo, SYSTEM_INFO};
@@ -24,84 +25,119 @@ pub enum ExpError {
 //    time_taken: usize
 //}
 
-/// Wrapper over method to read slices of memory.
-fn read<T>(proc_handle: HANDLE, address: u64, amount: usize, out: &mut [T]) -> Result<usize, ExpError>  {
-    /* Read the chunk */
-    let mut amount_read = 0;
-    let success = unsafe {
-        ReadProcessMemory(proc_handle, address as LPCVOID,
-                out.as_mut_ptr() as LPVOID, min(out.len(), amount) as SIZE_T,
-                &mut amount_read)
-    };
+struct Process {
+    id: u64,
+    handle: HANDLE
+}
 
-    if success == FALSE {
-        return Err(ExpError::RPMFailed);
+impl Drop for Process {
+    fn drop(&mut self) {
+        println!("Destructor.");
+        if !self.handle.is_null() {
+            unsafe {
+                CloseHandle(self.handle);
+            };
+        }
+    }
+}
+
+impl Process {
+    pub fn open_by_pid(process_id: u64) -> Result<Process, &'static str> {
+        let handle: HANDLE = unsafe {
+            OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION,
+                    false as BOOL, process_id as DWORD)
+        };
+
+        if handle.is_null() {
+            return Err("Failed to open handle.");
+        }
+
+        Ok(Process { id: process_id, handle: handle })
     }
 
-    return Ok(amount_read);
+    //pub fn get_region() {
+    //    /* Get info on this region, if there is one. */
+    //    let mut meminfo: MEMORY_BASIC_INFORMATION = unsafe { std::mem::zeroed() };
+    //    let ret: SIZE_T = unsafe {
+    //        VirtualQueryEx(proc_handle, region_base as LPCVOID, &mut meminfo,
+    //                std::mem::size_of::<MEMORY_BASIC_INFORMATION>() as SIZE_T)
+    //    };
+    //    if ret == 0 { return; }
+
+    //    /* Only record regions that we can interact with. */
+    //    if meminfo.Type != 0 && meminfo.State != MEM_FREE && meminfo.State != MEM_RESERVE {
+    //        regions.push(Region {
+    //            base_address: region_base as u64,
+    //            size: meminfo.RegionSize
+    //        });
+    //    }
+    //}
+
+    pub fn get_all_regions() {
+        println!("ASDF");
+    }
+
+    pub fn read<T>(&self, address: u64, amount: usize, out: &mut [T]) -> Result<usize, ExpError>  {
+        /* Read the chunk */
+        let mut amount_read = 0;
+        let success = unsafe {
+            ReadProcessMemory(self.handle, address as LPCVOID,
+                    out.as_mut_ptr() as LPVOID, min(out.len(), amount) as SIZE_T,
+                    &mut amount_read)
+        };
+
+        if success == FALSE {
+            return Err(ExpError::RPMFailed);
+        }
+
+        return Ok(amount_read);
+    }
 }
 
 fn main() {
     let pid = 12944;
     
-    let proc_handle: HANDLE = unsafe {
-        OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION,
-                false as BOOL, pid as DWORD)
+    let process = Process::open_by_pid(pid);
+    let process = match process {
+        Ok(obj) => obj,
+        Err(error) => panic!("Failed to open pid={}", pid),
     };
-    if proc_handle.is_null() {
-        println!("Failed to open handle on pid={}", pid);
-        return;
-    }
-    println!("Opened handle on pid={}: {:?}", pid, proc_handle);
+    println!("Opened handle on pid={}: {:?}", pid, process.handle);
 
 
-    /* Loop through each region in this process's memory. */
-    let mut region_base: usize = 0;
-    let mut regions: Vec<Region> = Vec::new();
 
-    let start = Instant::now();
-    loop {
-        /* Get info on this region, if there is one. */
-        let mut meminfo: MEMORY_BASIC_INFORMATION = unsafe { std::mem::zeroed() };
-        let ret: SIZE_T = unsafe {
-            VirtualQueryEx(proc_handle, region_base as LPCVOID, &mut meminfo,
-                    std::mem::size_of::<MEMORY_BASIC_INFORMATION>() as SIZE_T)
-        };
-        if ret == 0 { break; }
+    // /* Loop through each region in this process's memory. */
+    // let mut region_base: usize = 0;
+    // let mut regions: Vec<Region> = Vec::new();
 
-        /* Only record regions that we can interact with. */
-        if meminfo.Type != 0 && meminfo.State != MEM_FREE && meminfo.State != MEM_RESERVE {
-            regions.push(Region {
-                base_address: region_base as u64,
-                size: meminfo.RegionSize
-            });
-        }
+    // let start = Instant::now();
+    // loop {
 
-        /* Move on to the next region */
-        region_base += meminfo.RegionSize;
-    }
-    println!("Discovered {} regions in {:?}", regions.len(),
-            start.elapsed().to_std().ok().unwrap());
+    //     /* Move on to the next region */
+    //     region_base += meminfo.RegionSize;
+    // }
+    // println!("Discovered {} regions in {:?}", regions.len(),
+    //         start.elapsed().to_std().ok().unwrap());
 
-    let mut total_time = Duration::seconds(0);
-    let mut total_bytes = 0;
-    for region in regions {
-        let mut region_data: Vec<u8> = vec![0; region.size];
+    // let mut total_time = Duration::seconds(0);
+    // let mut total_bytes = 0;
+    // for region in regions {
+    //     let mut region_data: Vec<u8> = vec![0; region.size];
 
-        let start = Instant::now();
-        read(proc_handle, region.base_address, region.size, region_data.as_mut_slice());
-        let read_time = start.elapsed();
+    //     let start = Instant::now();
+    //     read(proc_handle, region.base_address, region.size, region_data.as_mut_slice());
+    //     let read_time = start.elapsed();
 
-        total_time += read_time;
-        total_bytes += region.size;
+    //     total_time += read_time;
+    //     total_bytes += region.size;
 
-        println!("REGION [addr={:016x}, size={:x}, read_time={:?}]",
-                region.base_address, region.size, total_time.to_std().ok().unwrap());
+    //     println!("REGION [addr={:016x}, size={:x}, read_time={:?}]",
+    //             region.base_address, region.size, total_time.to_std().ok().unwrap());
 
-    }
-    println!("Dumped {} in {:?} (~{}/s)",
-            ByteSize(total_bytes as u64).to_string(),
-            total_time.to_std().unwrap(),
-            ByteSize(((total_bytes as i128 / total_time.whole_microseconds())
-                    * Duration::second().whole_microseconds()) as u64).to_string());
+    // }
+    // println!("Dumped {} in {:?} (~{}/s)",
+    //         ByteSize(total_bytes as u64).to_string(),
+    //         total_time.to_std().unwrap(),
+    //         ByteSize(((total_bytes as i128 / total_time.whole_microseconds())
+    //                 * Duration::second().whole_microseconds()) as u64).to_string());
 }
