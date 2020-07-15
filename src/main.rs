@@ -27,7 +27,7 @@ type Address = u64;
 ///   - windows
 ///     - 
 #[derive(Debug, Clone, Copy)]
-struct Region {
+struct PageRange {
     /// Base address of the region.
     base: Address,
 
@@ -67,7 +67,7 @@ struct Region {
     size: usize
 }
 
-impl fmt::Display for Region {
+impl fmt::Display for PageRange {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let committed = if self.committed { "" } else { "not-committed" };
         let guarded = if self.guarded { " guarded" } else { "" };
@@ -116,7 +116,7 @@ impl Process {
     }
 
     /// Get the region that the provided address is located in.
-    pub fn get_region(&self, address: Address) -> Option<Region> {
+    pub fn get_region(&self, address: Address) -> Option<PageRange> {
         /* Get info on this region, if there is one. */
         let mut meminfo: MEMORY_BASIC_INFORMATION = unsafe { std::mem::zeroed() };
         let ret: SIZE_T = unsafe {
@@ -129,7 +129,7 @@ impl Process {
         }
 
         /* Construct region. */
-        let mut region = Region {
+        let mut region = PageRange {
             base: meminfo.BaseAddress as Address,
             read: false,  // These two will be set later
             write: false,
@@ -172,8 +172,8 @@ impl Process {
         Some(region)
     }
 
-    pub fn get_regions(&self) -> Vec<Region> {
-        let mut regions: Vec<Region> = Vec::new();
+    pub fn get_regions(&self) -> Vec<PageRange> {
+        let mut regions: Vec<PageRange> = Vec::new();
 
         /* Enumerate all regions. */
         let mut base: Address = 0;
@@ -230,13 +230,13 @@ fn main() {
 
     // /* Loop through each region in this process's memory. */
     // let mut region_base: usize = 0;
-    // let mut regions: Vec<Region> = Vec::new();
+    // let mut regions: Vec<PageRange> = Vec::new();
 
     // let start = Instant::now();
     // loop {
 
     //     /* Move on to the next region */
-    //     region_base += meminfo.RegionSize;
+    //     region_base += meminfo.PageRangeSize;
     // }
     // println!("Discovered {} regions in {:?}", regions.len(),
     //         start.elapsed().to_std().ok().unwrap());
