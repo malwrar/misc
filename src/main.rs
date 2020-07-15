@@ -12,6 +12,7 @@ use winapi::um::memoryapi::{VirtualQueryEx, ReadProcessMemory};
 use winapi::um::processthreadsapi::OpenProcess;
 //use winapi::um::sysinfoapi::{GetNativeSystemInfo, SYSTEM_INFO};
 use winapi::um::winnt::{HANDLE, PROCESS_VM_READ, PROCESS_QUERY_INFORMATION, MEMORY_BASIC_INFORMATION, MEM_FREE, MEM_COMMIT, PAGE_GUARD, MEM_PRIVATE};
+use winapi::um::winnt;
 
 mod error;
 use error::{Error, Result};
@@ -19,53 +20,38 @@ use error::{Error, Result};
 /// Represents a memory address.
 type Address = u64;
 
-#[derive(Debug, Clone, Copy)]
-struct Permission {
-    pub read: bool,
-    pub write: bool,   // NOTE: not supported on some OSes.
-    pub execute: bool  // NOTE: DEP may disallow this flag.
-}
-
-impl fmt::Display for Permission {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let r = if self.read { "r" } else { "-" };
-        let w = if self.write { "w" } else { "-" };
-        let x = if self.execute { "x" } else { "-" };
-
-        write!(f, "{}{}{}", r, w, x)
-    }
-}
-
 /// Cross-platform representation of a collection of adjacent memory pages that
 /// have similar properties.
+///
+/// Some good resources explaining permissions are as follows:
+///   - windows
+///     - 
 #[derive(Debug, Clone, Copy)]
 struct Region {
     /// Base address of the region.
     base: Address,
 
-    /// [Permission](struct.Protection.html)s in effect for this region.
-    permissions: Permission,
+    // TODO: fill out docs
+    pub read: bool,
+    pub write: bool,    // NOTE: not supported on some OSes.
+    pub execute: bool,  // NOTE: DEP may disallow this flag.
 
     /// Indicates if this region has been allocated system resources, rather
     /// than just reserving the numeric virtual address range for future use.
     ///
     /// Refer to the following for more info:
     ///   - https://www.tenouk.com/WinVirtualAddressSpace.html#page-state
+    ///   - https://docs.microsoft.com/en-us/windows/win32/memory/memory-protection-constants
+    ///   - https://j00ru.vexillium.org/2013/04/fun-facts-windows-kernel-and-guard-pages/
+    ///   - https://docs.microsoft.com/en-us/windows/win32/memory/freeing-virtual-memory
+    ///   - https://www.tenouk.com/WinVirtualAddressSpace.html#page-state
     committed: bool,
 
     /// Indicates if this region has a guard flag set.
-    ///
-    /// Refer to the following for more info:
-    ///   - https://docs.microsoft.com/en-us/windows/win32/memory/memory-protection-constants
-    ///   - https://j00ru.vexillium.org/2013/04/fun-facts-windows-kernel-and-guard-pages/
     guarded: bool,
 
     /// Indicates if this region has been freed in a way that renders the range
     /// inaccessible to users.
-    ///
-    /// Refer to the following for more info:
-    ///   - https://docs.microsoft.com/en-us/windows/win32/memory/freeing-virtual-memory
-    ///   - https://www.tenouk.com/WinVirtualAddressSpace.html#page-state
     freed: bool,
 
     /// Indicates if this region is shared across multiple virtual address spaces.
@@ -74,21 +60,28 @@ struct Region {
     /// Indicates if this region is cachable.
     cachable: bool,
 
+    /// Indicates if this region is copy-on-write.
+    cow: bool,
+
     /// Size in bytes of this region.
     size: usize
 }
 
 impl fmt::Display for Region {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let committed = if self.committed { " committed" } else { "" };
+        let committed = if self.committed { "" } else { "not-committed" };
         let guarded = if self.guarded { " guarded" } else { "" };
         let freed = if self.freed { " freed" } else { "" };
         let shared = if self.shared { " shared" } else { "" };
-        let cachable = if self.cachable { " cachable" } else { "" };
+        let cachable = if self.cachable { "" } else { "not-cachable" };
+        let cow = if self.cow { " copy-on-write" } else { "" };
+        let r = if self.read { "r" } else { "-" };
+        let w = if self.write { "w" } else if self.cow { "c" } else { "-" };
+        let x = if self.execute { "x" } else { "-" };
 
-        write!(f, "0x{:016x} {} {: >9}{}{}{}{}{}", self.base, self.permissions,
-                ByteSize(self.size as u64).to_string(), committed, guarded,
-                freed, shared, cachable)
+        write!(f, "0x{:016x} {}{}{} {: >9}{}{}{}{}{}{}", self.base, r, w, x,
+                ByteSize(self.size as u64).to_string_as(true), committed,
+                guarded, freed, shared, cachable, cow)
     }
 }
 
@@ -136,20 +129,45 @@ impl Process {
         }
 
         /* Construct region. */
-        let region = Region {
+        let mut region = Region {
             base: meminfo.BaseAddress as Address,
-            permissions: Permission {
-                read: false,
-                write: false,
-                execute: false
-            },
+            read: false,  // These two will be set later
+            write: false,
+            execute: (meminfo.Protect & 0xf0) != 0,
             committed: (meminfo.State & MEM_COMMIT) != 0,
-            guarded: (meminfo.Protect & PAGE_GUARDED) != 0,
+            guarded: (meminfo.Protect & winnt::PAGE_GUARD) != 0,
             freed: (meminfo.State & MEM_FREE) != 0,
-            shared: (meminfo.Type & MEM_PRIVATE) != 0,
-            cachable: false,
+            shared: (meminfo.Type & MEM_PRIVATE) == 0,
+            cachable: (meminfo.Protect & winnt::PAGE_NOCACHE) == 0,
+            cow: (meminfo.Protect & (winnt::PAGE_EXECUTE_WRITECOPY | winnt::PAGE_WRITECOPY)) != 0,
             size: meminfo.RegionSize
         };
+
+        // Write is a superset of read, so we can save lines by checking it
+        // first. We also add in a bonus check to try and detect weird
+        // permissions. Note that rwx permissions are stored in the lowest
+        // byte, which is why we mask it off.
+        region.write = match meminfo.Protect & 0xff {
+            winnt::PAGE_EXECUTE =>           false,
+            winnt::PAGE_EXECUTE_READ =>      false,
+            winnt::PAGE_EXECUTE_READWRITE => true,
+            winnt::PAGE_EXECUTE_WRITECOPY => true,
+            winnt::PAGE_NOACCESS =>  false,
+            winnt::PAGE_READONLY =>  false,
+            winnt::PAGE_READWRITE => true,
+            winnt::PAGE_WRITECOPY => true,
+            0x00 =>  false,  // Appears to be set when page isn't valid.
+            _ => panic!("Encountered unknown page permissions: {}",
+                    meminfo.Protect & 0xff)
+        };
+
+        // Having write permissions implies read permissions, so we only need
+        // to check read permissions here.
+        region.read = match meminfo.Protect & 0xff {
+            winnt::PAGE_EXECUTE_READ => true,
+            winnt::PAGE_READONLY =>     true,
+            _ => false
+        } || region.write;
 
         Some(region)
     }
@@ -166,6 +184,7 @@ impl Process {
                 None => break,
             };
             let region = region.unwrap();
+
             regions.push(region);
 
             base += region.size as Address;
@@ -174,21 +193,21 @@ impl Process {
         regions
     }
 
-    //pub fn read<T>(&self, address: u64, amount: usize, out: &mut [T]) -> Result<usize, ExpError>  {
-    //    /* Read the chunk */
-    //    let mut amount_read = 0;
-    //    let success = unsafe {
-    //        ReadProcessMemory(self.handle, address as LPCVOID,
-    //                out.as_mut_ptr() as LPVOID, min(out.len(), amount) as SIZE_T,
-    //                &mut amount_read)
-    //    };
+    pub fn read<T>(&self, address: u64, amount: usize, out: &mut [T]) -> Result<usize>  {
+        /* Read the chunk */
+        let mut amount_read = 0;
+        let success = unsafe {
+            ReadProcessMemory(self.handle, address as LPCVOID,
+                    out.as_mut_ptr() as LPVOID, min(out.len(), amount) as SIZE_T,
+                    &mut amount_read)
+        };
 
-    //    if success == FALSE {
-    //        return Err(ExpError::RPMFailed);
-    //    }
+        if success == FALSE {
+            return Err(Error::new("RPM failed."));
+        }
 
-    //    return Ok(amount_read);
-    //}
+        return Ok(amount_read);
+    }
 }
 
 fn main() {
@@ -204,7 +223,7 @@ fn main() {
 
     /* Dump each region */
     for region in process.get_regions() {
-        if !region.committed {
+        if region.committed {
             println!("{} ", region);
         }
     }
