@@ -10,6 +10,7 @@ use winapi::shared::minwindef::{LPCVOID, LPVOID, BOOL, FALSE, DWORD};
 use winapi::um::handleapi::CloseHandle;
 use winapi::um::memoryapi::{VirtualQueryEx, ReadProcessMemory};
 use winapi::um::processthreadsapi::OpenProcess;
+use winapi::um::psapi::EnumProcesses;
 //use winapi::um::sysinfoapi::{GetNativeSystemInfo, SYSTEM_INFO};
 use winapi::um::winnt::{HANDLE, PROCESS_VM_READ, PROCESS_QUERY_INFORMATION, MEMORY_BASIC_INFORMATION, MEM_FREE, MEM_COMMIT, PAGE_GUARD, MEM_PRIVATE};
 use winapi::um::winnt;
@@ -210,23 +211,81 @@ impl Process {
     }
 }
 
-fn main() {
-    let pid = 12944;
-    
+struct ProcDumpStats {
+    process_open_time: f32,
+    region_count: u32,
+    region_avg_size: f32,
+    region_enum_time: f32,
+    region_dump_time: f32,
+}
+
+fn dump_proc_by_pid(pid: u64) {
     /* Open process */
     let process = Process::open_by_pid(pid);
     let process = match process {
         Ok(obj) => obj,
-        Err(error) => panic!("Failed to open pid={}: {}", pid, error),
+        //Err(error) => panic!("Failed to open pid={}: {}", pid, error),
+        Err(error) => return,
     };
     println!("Opened handle on pid={}: {:?}.", pid, process.handle);
 
     /* Dump each region */
     for region in process.get_regions() {
         if region.committed {
+            // TODO: do the dump, time reads, calculate bytes/sec
             println!("{} ", region);
         }
     }
+}
+
+fn main() {
+
+    let mut processes: [DWORD; 1024] = [0; 1024];
+    let mut cbneeded: DWORD = 0;
+    let ret = unsafe {
+        EnumProcesses(processes.as_mut_ptr(),
+                (processes.len() * std::mem::size_of::<DWORD>()) as u32, &mut cbneeded)
+    };
+
+    let mut process_count = cbneeded as usize / std::mem::size_of::<DWORD>();
+    for (i, pid) in processes.iter().enumerate() {
+        if i == process_count { break; }  // exit early if we reach the end of the list
+
+        dump_proc_by_pid(*pid as u64);  // TODO: detect processes that fail to open (print by process name, window title)
+    }
+
+
+    // TODO: implement region system so we can mark e.g. processes. get rid of the get_regions functions, perhaps get_page_range only?
+
+
+
+
+
+
+
+
+
+
+
+    // TODO: gather data across all processes, not just the first one
+    // TODO: read all readable sections, getting an average bytes per second. run this a few times to get an idea if repeated reads caches better
+    // TODO: log region size by average bytes per second time, see if read buffer size has an effect on speed
+    // TODO: we need to determine bytes per second and read call penalty. Based on this info, we can determine if it's more efficient to read 
+    //       across regions or individually
+    // TODO: based on this info, build our batched read system (attempt to read multiple values in one read call, minimizing reads)
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     // /* Loop through each region in this process's memory. */
     // let mut region_base: usize = 0;
