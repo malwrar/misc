@@ -311,6 +311,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         dump_stats.push(stats);
     }
 
+    let mut data_csv_file = File::open("stats.csv")
+    for stats in dump_stats {
+        write!(&mut data_csv_file, "{},{},{},{},{}", stats.process_open_time,
+                stats.region_count, stats.region_avg_size,
+                stats.region_enum_time, stats.region_dump_time);
+    }
 
     // TODO: implement region system so we can mark e.g. processes. get rid of the get_regions functions, perhaps get_page_range only?
 
