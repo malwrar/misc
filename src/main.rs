@@ -194,9 +194,10 @@ impl Process {
         regions
     }
 
-    pub fn read<T>(&self, address: u64, amount: usize, out: &mut [T]) -> Result<usize>  {
+    pub fn read<T>(&self, address: u64, amount: usize) -> Result<Vec<T>>  {
         /* Read the chunk */
         let mut amount_read = 0;
+        let mut out: Vec<T> = Vec::with_capacity(amount);
         let success = unsafe {
             ReadProcessMemory(self.handle, address as LPCVOID,
                     out.as_mut_ptr() as LPVOID, min(out.len(), amount) as SIZE_T,
@@ -207,51 +208,107 @@ impl Process {
             return Err(Error::new("RPM failed."));
         }
 
-        return Ok(amount_read);
+        Ok(out)
     }
 }
 
 struct ProcDumpStats {
-    process_open_time: f32,
-    region_count: u32,
-    region_avg_size: f32,
-    region_enum_time: f32,
-    region_dump_time: f32,
+    process_open_time: Duration,
+    region_count: usize,
+    region_avg_size: usize,
+    region_enum_time: Duration,
+    region_dump_time: Duration,
 }
 
-fn dump_proc_by_pid(pid: u64) {
-    /* Open process */
-    let process = Process::open_by_pid(pid);
-    let process = match process {
-        Ok(obj) => obj,
-        //Err(error) => panic!("Failed to open pid={}: {}", pid, error),
-        Err(error) => return,
-    };
-    println!("Opened handle on pid={}: {:?}.", pid, process.handle);
-
-    /* Dump each region */
-    for region in process.get_regions() {
-        if region.committed {
-            // TODO: do the dump, time reads, calculate bytes/sec
-            println!("{} ", region);
+impl ProcDumpStats {
+    fn new() -> ProcDumpStats {
+        ProcDumpStats {
+            process_open_time: Duration::new(0, 0),
+            region_count: 0,
+            region_avg_size: 0,
+            region_enum_time: Duration::new(0, 0),
+            region_dump_time: Duration::new(0, 0)
         }
     }
 }
 
-fn main() {
 
+
+
+
+// TODO: create functions to calc bytes per second, dump time, dump read call overhead
+
+
+
+
+
+
+
+
+
+
+    
+impl fmt::Display for ProcDumpStats {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let bytes_per_microsecond = self.region_avg_size as i128 / self.region_dump_time.whole_microseconds();
+        let bytes_per_second = (bytes_per_microsecond * Duration::second().whole_microseconds()) as u64;
+
+
+        // TODO: is this right? low region
+
+
+        write!(f, "regions={}\tavg_region_size={}\tread_speed={}/s",
+                self.region_count, ByteSize(self.region_avg_size as u64),
+                ByteSize(bytes_per_second))
+    }
+}
+
+fn dump_proc_by_pid(pid: u64) -> Result<ProcDumpStats> {
+    let mut stats = ProcDumpStats::new();
+
+    /* Open process */
+    let start = Instant::now();
+    let process = Process::open_by_pid(pid)?;
+    stats.process_open_time = start.elapsed();
+
+    /* Dump each region */
+    let start = Instant::now();
+    let regions = process.get_regions();
+    stats.region_enum_time = start.elapsed();
+
+    let start = Instant::now();
+    let mut region_size: usize = 0;
+    for region in regions {
+        if !region.committed { continue; }
+        stats.region_count += 1;
+        region_size += region.size;
+        let _: Vec<u8> = process.read(region.base, region.size)?;  // dummy read to simulate work
+    }
+    stats.region_dump_time = start.elapsed();
+    stats.region_avg_size = region_size / stats.region_count;
+
+    Ok(stats)
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut processes: [DWORD; 1024] = [0; 1024];
     let mut cbneeded: DWORD = 0;
-    let ret = unsafe {
+    let _ = unsafe {
         EnumProcesses(processes.as_mut_ptr(),
                 (processes.len() * std::mem::size_of::<DWORD>()) as u32, &mut cbneeded)
     };
 
-    let mut process_count = cbneeded as usize / std::mem::size_of::<DWORD>();
+    let process_count = cbneeded as usize / std::mem::size_of::<DWORD>();
+    let dump_stats: Vec<ProcDumpStats> = Vec::new();
+
     for (i, pid) in processes.iter().enumerate() {
         if i == process_count { break; }  // exit early if we reach the end of the list
 
-        dump_proc_by_pid(*pid as u64);  // TODO: detect processes that fail to open (print by process name, window title)
+        let stats = match dump_proc_by_pid(*pid as u64) {
+            Ok(stats) => stats,
+            Err(_) => continue
+        };
+        dump_stats.push(stats);
     }
 
 
