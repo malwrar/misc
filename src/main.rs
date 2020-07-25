@@ -1,22 +1,22 @@
 #![allow(dead_code)]
 
-use std::fmt;
-use std::cmp::min;
-use time::{Instant, Duration};
-use bytesize::ByteSize;
+use std::result::Result as StdResult;
 
+use bytesize::ByteSize;
 use winapi::shared::basetsd::SIZE_T;
 use winapi::shared::minwindef::{LPCVOID, LPVOID, BOOL, FALSE, DWORD};
 use winapi::um::handleapi::CloseHandle;
 use winapi::um::memoryapi::{VirtualQueryEx, ReadProcessMemory};
 use winapi::um::processthreadsapi::OpenProcess;
 use winapi::um::psapi::EnumProcesses;
-//use winapi::um::sysinfoapi::{GetNativeSystemInfo, SYSTEM_INFO};
-use winapi::um::winnt::{HANDLE, PROCESS_VM_READ, PROCESS_QUERY_INFORMATION, MEMORY_BASIC_INFORMATION, MEM_FREE, MEM_COMMIT, PAGE_GUARD, MEM_PRIVATE};
+use winapi::um::winnt::{HANDLE, PROCESS_VM_READ, PROCESS_QUERY_INFORMATION, MEMORY_BASIC_INFORMATION};
 use winapi::um::winnt;
 
 mod error;
 use error::{Error, Result};
+
+mod stats;
+use stats::{IoStats};
 
 /// Represents a memory address.
 type Address = u64;
@@ -68,8 +68,8 @@ struct PageRange {
     size: usize
 }
 
-impl fmt::Display for PageRange {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl std::fmt::Display for PageRange {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let committed = if self.committed { "" } else { "not-committed" };
         let guarded = if self.guarded { " guarded" } else { "" };
         let freed = if self.freed { " freed" } else { "" };
@@ -86,10 +86,13 @@ impl fmt::Display for PageRange {
     }
 }
 
+// TODO: split IO operations from Process into an AddressSpace struct that we populate from a process
+
 #[derive(Debug)]
 struct Process {
     id: u64,
-    handle: HANDLE
+    handle: HANDLE,
+    read_stats: IoStats
 }
 
 impl Drop for Process {
@@ -113,7 +116,11 @@ impl Process {
             return Err(Error::new("Failed to open handle"));
         }
 
-        Ok(Process { id: process_id, handle: handle })
+        Ok(Process {
+            id: process_id,
+            handle: handle,
+            read_stats: IoStats::new()
+        })
     }
 
     /// Get the region that the provided address is located in.
@@ -135,12 +142,14 @@ impl Process {
             read: false,  // These two will be set later
             write: false,
             execute: (meminfo.Protect & 0xf0) != 0,
-            committed: (meminfo.State & MEM_COMMIT) != 0,
+            committed: (meminfo.State & winnt::MEM_COMMIT) != 0,
             guarded: (meminfo.Protect & winnt::PAGE_GUARD) != 0,
-            freed: (meminfo.State & MEM_FREE) != 0,
-            shared: (meminfo.Type & MEM_PRIVATE) == 0,
+            freed: (meminfo.State & winnt::MEM_FREE) != 0,
+            shared: (meminfo.Type & winnt::MEM_PRIVATE) == 0,
             cachable: (meminfo.Protect & winnt::PAGE_NOCACHE) == 0,
-            cow: (meminfo.Protect & (winnt::PAGE_EXECUTE_WRITECOPY | winnt::PAGE_WRITECOPY)) != 0,
+            cow: (meminfo.Protect
+                    & (winnt::PAGE_EXECUTE_WRITECOPY
+                        | winnt::PAGE_WRITECOPY)) != 0,
             size: meminfo.RegionSize
         };
 
@@ -194,49 +203,34 @@ impl Process {
         regions
     }
 
-    pub fn read<T>(&self, address: u64, amount: usize) -> Result<Vec<T>>  {
+    pub fn read<T>(&mut self, address: u64, amount: usize) -> Result<Vec<T>>  {
         /* Read the chunk */
-        let mut amount_read = 0;
+        let mut amount_read: SIZE_T = 0;
         let mut out: Vec<T> = Vec::with_capacity(amount);
+
+        let mut stats = self.read_stats.begin(amount);
+
         let success = unsafe {
             ReadProcessMemory(self.handle, address as LPCVOID,
-                    out.as_mut_ptr() as LPVOID, min(out.len(), amount) as SIZE_T,
+                    out.as_mut_ptr() as LPVOID, out.capacity() as SIZE_T,
                     &mut amount_read)
         };
+
+        // TODO: reduce vector size based on amount actually read?
 
         if success == FALSE {
             return Err(Error::new("RPM failed."));
         }
 
+        self.read_stats.end(&mut stats);
+
         Ok(out)
     }
 }
 
-struct ProcDumpStats {
-    process_open_time: Duration,
-    region_count: usize,
-    region_avg_size: usize,
-    region_enum_time: Duration,
-    region_dump_time: Duration,
-}
-
-impl ProcDumpStats {
-    fn new() -> ProcDumpStats {
-        ProcDumpStats {
-            process_open_time: Duration::new(0, 0),
-            region_count: 0,
-            region_avg_size: 0,
-            region_enum_time: Duration::new(0, 0),
-            region_dump_time: Duration::new(0, 0)
-        }
-    }
-}
-
-
-
-
-
-// TODO: create functions to calc bytes per second, dump time, dump read call overhead
+/// Dump a process
+fn dump_proc_by_pid(pid: u64) -> Result<IoStats> {
+    let mut process = Process::open_by_pid(pid)?;
 
 
 
@@ -244,53 +238,28 @@ impl ProcDumpStats {
 
 
 
+    // TODO: locate adjacent regions and read across them, get_read_regions()? 
+    // TODO: graph region read speed
 
 
 
-    
-impl fmt::Display for ProcDumpStats {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let bytes_per_microsecond = self.region_avg_size as i128 / self.region_dump_time.whole_microseconds();
-        let bytes_per_second = (bytes_per_microsecond * Duration::second().whole_microseconds()) as u64;
 
 
-        // TODO: is this right? low region
 
 
-        write!(f, "regions={}\tavg_region_size={}\tread_speed={}/s",
-                self.region_count, ByteSize(self.region_avg_size as u64),
-                ByteSize(bytes_per_second))
-    }
-}
-
-fn dump_proc_by_pid(pid: u64) -> Result<ProcDumpStats> {
-    let mut stats = ProcDumpStats::new();
-
-    /* Open process */
-    let start = Instant::now();
-    let process = Process::open_by_pid(pid)?;
-    stats.process_open_time = start.elapsed();
-
-    /* Dump each region */
-    let start = Instant::now();
-    let regions = process.get_regions();
-    stats.region_enum_time = start.elapsed();
-
-    let start = Instant::now();
-    let mut region_size: usize = 0;
-    for region in regions {
+    for region in process.get_regions() {
         if !region.committed { continue; }
-        stats.region_count += 1;
-        region_size += region.size;
-        let _: Vec<u8> = process.read(region.base, region.size)?;  // dummy read to simulate work
+        let _: Vec<u8> = match process.read(region.base, region.size) {
+            Ok(data) => data,
+            Err(_) => continue
+        };
     }
-    stats.region_dump_time = start.elapsed();
-    stats.region_avg_size = region_size / stats.region_count;
 
-    Ok(stats)
+    Ok(process.read_stats.clone())
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> StdResult<(), Box<dyn std::error::Error>> {
+    /* Get a snapshot of all valid process IDs */
     let mut processes: [DWORD; 1024] = [0; 1024];
     let mut cbneeded: DWORD = 0;
     let _ = unsafe {
@@ -298,90 +267,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 (processes.len() * std::mem::size_of::<DWORD>()) as u32, &mut cbneeded)
     };
 
-    let process_count = cbneeded as usize / std::mem::size_of::<DWORD>();
-    let dump_stats: Vec<ProcDumpStats> = Vec::new();
+    /* Dump each process, recording read statistics on each dump. */
+    let mut dump_stats: Vec<IoStats> = Vec::new();
 
+    let process_count = cbneeded as usize / std::mem::size_of::<DWORD>();
     for (i, pid) in processes.iter().enumerate() {
         if i == process_count { break; }  // exit early if we reach the end of the list
 
-        let stats = match dump_proc_by_pid(*pid as u64) {
-            Ok(stats) => stats,
+        let read_stats = match dump_proc_by_pid(*pid as u64) {
+            Ok(read_stats) => read_stats,
             Err(_) => continue
         };
-        dump_stats.push(stats);
+
+        println!("{}/{} - {}", i, process_count, read_stats);
+
+        dump_stats.push(read_stats.clone());
     }
 
-    let mut data_csv_file = File::open("stats.csv")
-    for stats in dump_stats {
-        write!(&mut data_csv_file, "{},{},{},{},{}", stats.process_open_time,
-                stats.region_count, stats.region_avg_size,
-                stats.region_enum_time, stats.region_dump_time);
-    }
+    let aggregate_read_stats = dump_stats.iter().fold(IoStats::new(),
+            | agg, cur | agg + cur.clone());  // NOTE: clone here is probably a slow idea
+    
+    println!("total_reads={}, avg_read_speed={}", aggregate_read_stats.io_metrics.len(), aggregate_read_stats);
 
-    // TODO: implement region system so we can mark e.g. processes. get rid of the get_regions functions, perhaps get_page_range only?
+    //for metric in aggregate_read_stats.io_metrics {
+    //    println!("{}", metric);
+    //}
 
-
-
-
-
-
-
-
-
-
-
-    // TODO: gather data across all processes, not just the first one
-    // TODO: read all readable sections, getting an average bytes per second. run this a few times to get an idea if repeated reads caches better
-    // TODO: log region size by average bytes per second time, see if read buffer size has an effect on speed
-    // TODO: we need to determine bytes per second and read call penalty. Based on this info, we can determine if it's more efficient to read 
-    //       across regions or individually
-    // TODO: based on this info, build our batched read system (attempt to read multiple values in one read call, minimizing reads)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    // /* Loop through each region in this process's memory. */
-    // let mut region_base: usize = 0;
-    // let mut regions: Vec<PageRange> = Vec::new();
-
-    // let start = Instant::now();
-    // loop {
-
-    //     /* Move on to the next region */
-    //     region_base += meminfo.PageRangeSize;
-    // }
-    // println!("Discovered {} regions in {:?}", regions.len(),
-    //         start.elapsed().to_std().ok().unwrap());
-
-    // let mut total_time = Duration::seconds(0);
-    // let mut total_bytes = 0;
-    // for region in regions {
-    //     let mut region_data: Vec<u8> = vec![0; region.size];
-
-    //     let start = Instant::now();
-    //     read(proc_handle, region.base_address, region.size, region_data.as_mut_slice());
-    //     let read_time = start.elapsed();
-
-    //     total_time += read_time;
-    //     total_bytes += region.size;
-
-    //     println!("REGION [addr={:016x}, size={:x}, read_time={:?}]",
-    //             region.base_address, region.size, total_time.to_std().ok().unwrap());
-
-    // }
-    // println!("Dumped {} in {:?} (~{}/s)",
-    //         ByteSize(total_bytes as u64).to_string(),
-    //         total_time.to_std().unwrap(),
-    //         ByteSize(((total_bytes as i128 / total_time.whole_microseconds())
-    //                 * Duration::second().whole_microseconds()) as u64).to_string());
+    Ok(())
 }
+
+
+
+
+
+
+    // TODO: we need the ability to tag keys (e.g. module="foo_exe") to sections of memory, preferably with a notion of heirarchy (e.g. "foo_exe.text").
+    //       object graph can tap into this?
