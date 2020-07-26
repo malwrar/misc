@@ -18,6 +18,9 @@ use error::{Error, Result};
 mod stats;
 use stats::{IoStats};
 
+mod graphing;
+use graphing::{graph_read_size_to_speed};
+
 /// Represents a memory address.
 type Address = u64;
 
@@ -216,7 +219,7 @@ impl Process {
                     &mut amount_read)
         };
 
-        // TODO: reduce vector size based on amount actually read?
+        // TODO: reduce vector size based on amount actually read? that means we should probs also log amount actually read.
 
         if success == FALSE {
             return Err(Error::new("RPM failed."));
@@ -239,7 +242,10 @@ fn dump_proc_by_pid(pid: u64) -> Result<IoStats> {
 
 
     // TODO: locate adjacent regions and read across them, get_read_regions()? 
-    // TODO: graph region read speed
+    // TODO: improve the profiler summary
+    // TODO: create the graphs
+    // TODO: make profiler privesc
+    // TODO: distribute the profiler to the boys
 
 
 
@@ -286,12 +292,11 @@ fn main() -> StdResult<(), Box<dyn std::error::Error>> {
 
     let aggregate_read_stats = dump_stats.iter().fold(IoStats::new(),
             | agg, cur | agg + cur.clone());  // NOTE: clone here is probably a slow idea
-    
-    println!("total_reads={}, avg_read_speed={}", aggregate_read_stats.io_metrics.len(), aggregate_read_stats);
 
-    //for metric in aggregate_read_stats.io_metrics {
-    //    println!("{}", metric);
-    //}
+    /* Report stats!. */
+    graph_read_size_to_speed(&aggregate_read_stats)?;
+
+    println!("total_reads={}, avg_read_speed={}", aggregate_read_stats.io_metrics.len(), aggregate_read_stats);
 
     Ok(())
 }
