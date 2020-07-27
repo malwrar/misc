@@ -19,7 +19,7 @@ mod stats;
 use stats::{IoStats};
 
 mod graphing;
-use graphing::{graph_read_size_to_speed};
+use graphing::graph_read_size_to_speed;
 
 /// Represents a memory address.
 type Address = u64;
@@ -206,13 +206,63 @@ impl Process {
         regions
     }
 
+    pub fn get_readable_regions(&self) -> Vec<(Address, usize)> {
+        let mut read_regions: Vec<(Address, usize)> = Vec::new();
+
+        /* If there's no regions to process, yeet early. */
+        let regions = self.get_regions();
+        if regions.len() == 0 {
+            return read_regions;
+        }
+
+        /* Loop through all regions and record adjacent ones as "aggregate
+           readable regions", which is a dumb term I made up that is meant to
+           signify a single collection of regions we can smoothly read
+           across. */
+        let mut start: Address = 0;
+        let mut size: usize = 0;
+        for region in self.get_regions() {
+            if !region.read || !region.committed { continue; }
+
+            /* Handle first region. */
+            if size == 0 {
+                start = region.base;
+                size = region.size;
+            }
+            
+            /* If this region is adjacent to the previous ones, add it to the
+               aggregate readable region. */
+            else if start + size as Address == region.base {
+                size += region.size;
+            }
+            
+            /* If this region isn't adjacent to the previous ones, push the
+               current aggregate readable region to the list and start a new
+               one. */
+            else {
+                read_regions.push((start, size));
+                start = region.base;
+                size = region.size;
+            }
+        }
+
+        /* If there's one last aggregate readable region we were working on in
+           the loop, record it. */
+        if size != 0 {
+            read_regions.push((start, size));
+        }
+
+        read_regions
+    }
+
     pub fn read<T>(&mut self, address: u64, amount: usize) -> Result<Vec<T>>  {
         /* Read the chunk */
         let mut amount_read: SIZE_T = 0;
         let mut out: Vec<T> = Vec::with_capacity(amount);
 
-        let mut stats = self.read_stats.begin(amount);
-
+        let mut stats = self.read_stats.begin(amount);  // also lets record how
+                                                        // long this read took
+                                                        // for profiling!
         let success = unsafe {
             ReadProcessMemory(self.handle, address as LPCVOID,
                     out.as_mut_ptr() as LPVOID, out.capacity() as SIZE_T,
@@ -222,7 +272,7 @@ impl Process {
         // TODO: reduce vector size based on amount actually read? that means we should probs also log amount actually read.
 
         if success == FALSE {
-            return Err(Error::new("RPM failed."));
+            return Err(Error::new("RPM failed."));  // TODO: make this the actual OS error string?
         }
 
         self.read_stats.end(&mut stats);
@@ -253,9 +303,8 @@ fn dump_proc_by_pid(pid: u64) -> Result<IoStats> {
 
 
 
-    for region in process.get_regions() {
-        if !region.committed { continue; }
-        let _: Vec<u8> = match process.read(region.base, region.size) {
+    for (base, size) in process.get_readable_regions() {
+        let _: Vec<u8> = match process.read(base, size) {
             Ok(data) => data,
             Err(_) => continue
         };
@@ -295,6 +344,7 @@ fn main() -> StdResult<(), Box<dyn std::error::Error>> {
 
     /* Report stats!. */
     graph_read_size_to_speed(&aggregate_read_stats)?;
+    //graph_read_duration_vs_size(&aggregate_read_stats)?;
 
     println!("total_reads={}, avg_read_speed={}", aggregate_read_stats.io_metrics.len(), aggregate_read_stats);
 

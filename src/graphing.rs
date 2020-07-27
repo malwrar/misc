@@ -1,27 +1,6 @@
-//
-//Move graphing utils here
-//
-//Create stats.rs
-//    struct ReadStats -> Stats collected for each read
-//    struct DumpStats -> Stats collected for each process dump, including all reads in order
-//
-//Figure out how to make graphs w/ multiple Y axes
-//
-//Graph list of read stats (take in stats list, closure for x, y?)
-//    Read speed by region size
-//    Read speed by region count
-//
-//Graph list of dump stats (we'll need to get rid of that aggregate thing and just take a list of IoStats)
-//    Dump speed by read count
-//    Dump speed by avg region size
-//    Dump speed by total bytes read
-//
-//Can we build the same graphs but run them multiple times w/ a Z axis?
-//
-
-use std::cmp::{min, max};
 use std::error::Error;
 use std::result::Result;
+use std::time::Duration;
 
 use bytesize::ByteSize;
 use plotters::prelude::*;
