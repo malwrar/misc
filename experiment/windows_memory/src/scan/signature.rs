@@ -1,0 +1,1 @@
+Create a couple of methods that take a signature plus a space to scan. Implement methods that can take a PageRange, Region, or AddressSpace (or an array of these things) to specify scanning space, then search those regions

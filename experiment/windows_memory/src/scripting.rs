@@ -1,0 +1,1 @@
+/// Implements simple string-based address/object/region/etc declaration language
