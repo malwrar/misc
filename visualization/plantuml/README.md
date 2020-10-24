@@ -7,5 +7,6 @@ as ascii diagrams & unicode diagrams.
 
 ## Examples
 
-![example svg 1](./svg/so_6364672_1.svg)
-![example svg 2](./svg/so_6364672_2.svg)
+![example svg 1](./build/so_6364672_1.svg)
+
+![example svg 2](./build/so_6364672_2.svg)

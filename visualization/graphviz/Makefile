@@ -1,8 +1,4 @@
-# Compiles plantuml into a variety of interesting formats.
-#
-# This Makefile is designed to be easily extended to add new formats, simply
-# copy one of the blocks. Main targets like `all` and `clean` are at bottom of
-# file.
+# Compiles graphviz dot files into a variety of interesting formats.
 
 # Define compiler and output dir.
 CC     = dot
@@ -14,12 +10,12 @@ SVG = $(DOT:%.dot=$(OUTDIR)/%.svg)
 PNG = $(DOT:%.dot=$(OUTDIR)/%.png)
 ALL = $(SVG) $(PNG)
 
-# Compile uml into svgs.
+# Compile dots into svgs.
 $(OUTDIR)/%.svg: %.dot
 	@mkdir -p $(OUTDIR)
 	$(CC) -Tsvg "$<" -o $@
 
-# Compile uml into svgs.
+# Compile dots into pngs.
 $(OUTDIR)/%.png: %.dot
 	@mkdir -p $(OUTDIR)
 	$(CC) -Tpng "$<" -o $@
