@@ -15,22 +15,22 @@ ALL  = $(SVG) $(PNG) $(ATXT) $(UTXT)
 # Compile umls into svgs.
 $(OUTDIR)/%.svg: %.uml
 	@mkdir -p $(OUTDIR)
-	$(CC) -tsvg "$<" -o $@
+	$(CC) -tsvg "$<" -o $(OUTDIR)
 
 # Compile umls into pngs.
 $(OUTDIR)/%.png: %.uml
 	@mkdir -p $(OUTDIR)
-	$(CC) -tpng "$<" -o $@
+	$(CC) -tpng "$<" -o $(OUTDIR)
 
 # Compile umls into ascii txt diagrams.
 $(OUTDIR)/%.atxt: %.uml
 	@mkdir -p $(OUTDIR)
-	$(CC) -tatxt "$<" -o $@
+	$(CC) -ttxt "$<" -o $(OUTDIR)
 
 # Compile umls into unicode txt diagrams.
 $(OUTDIR)/%.utxt: %.uml
 	@mkdir -p $(OUTDIR)
-	$(CC) -tutxt "$<" -o $@
+	$(CC) -tutxt "$<" -o $(OUTDIR)
 
 # Compile everything. If you add a new format, be sure to include it here!
 all: $(ALL)
