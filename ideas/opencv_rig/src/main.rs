@@ -1,7 +1,11 @@
+/// Webcam(s) -> OpenCV -> misc outputs (webui, filesystem, etc)
+use opencv::{
+    prelude::*,
+    videoio::{VideoCapture, CAP_ANY},
+    Result,
+};
 
-use opencv::videoio::{VideoCapture, CAP_ANY);
-
-fn main() {
+fn main() -> Result<()> {
     println!("Hello, world!");
 
     // TODO: set up device listener thread (loop through devices, add to device map)
@@ -11,24 +15,23 @@ fn main() {
     // TODO: implement barebones frontend to display frames and chart metadata
 
 
-    let cameras: Vec<VideoCapture> = Vec::new();
+    let mut cameras: Vec<VideoCapture> = Vec::new();
 
-    const MAX_CAMERAS = 10;  // Arbitrary, since I can't find a logical limit.
+    const MAX_CAMERAS: i32 = 10;  // Arbitrary, since I can't find a logical limit.
     for i in 1..MAX_CAMERAS {
-        let camera = VideoCapture::new(i, CAP_ANY);
-
-        let camera = match camera {
-            Ok(c) => camera,
-            Err => break,
-        };
-
-        if !camera.is_open() {
-            break
+        let camera = VideoCapture::new(i, CAP_ANY)?;
+        if !camera.is_opened()? {
+            continue;
         }
+
+        //if !camera.is_opened() {
+        //    break
+        //}
 
         cameras.push(camera);
     }
 
-    println!("There are {} available cameras.", cameras.length());
+    println!("There are {} available cameras.", cameras.len());
 
+    Ok(())
 }
