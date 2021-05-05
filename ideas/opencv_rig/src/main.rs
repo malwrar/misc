@@ -1,6 +1,10 @@
 /// Webcam(s) -> OpenCV -> misc outputs (webui, filesystem, etc)
+use std::io::prelude::*;
 use opencv::{
+    core::{Mat},
+    imgcodecs::{imencode, IMWRITE_JPEG_QUALITY},
     prelude::*,
+    types::{VectorOfi32, VectorOfu8},
     videoio::{VideoCapture, CAP_ANY},
     Result,
 };
@@ -31,7 +35,22 @@ fn main() -> Result<()> {
         cameras.push(camera);
     }
 
-    println!("There are {} available cameras.", cameras.len());
+    println!("There are {} available camera(s).", cameras.len());
+
+    for (i, camera) in cameras.iter_mut().enumerate() {
+        let mut frame = Mat::default();
+        camera.read(&mut frame)?;
+
+        let mut encode_options = VectorOfi32::new();
+        encode_options.push(IMWRITE_JPEG_QUALITY);
+        encode_options.push(90);
+
+        let mut jpeg_data = VectorOfu8::new();
+        imencode(".jpeg", &mut frame, &mut jpeg_data, &encode_options)?;
+
+        let mut file = std::fs::File::create(format!("camera{}.jpeg", i)).unwrap();
+        file.write_all(jpeg_data.as_slice()).unwrap();
+    }
 
     Ok(())
 }
