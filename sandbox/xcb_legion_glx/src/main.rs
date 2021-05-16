@@ -64,6 +64,17 @@ fn main() {
 
     conn.flush().unwrap();
 
+
+
+
+
+    TODO: figure out how to hook up to glx, draw window
+    TODO: setup legion ECS thingy, ensure threading works
+
+
+
+
+
     loop {
         let event = conn.wait_for_event().unwrap();
 

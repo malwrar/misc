@@ -8,5 +8,5 @@ edition = "2018"
 [dependencies]
 log = "0.4.0"
 env_logger = "0.8.3"
-x11rb = { version = "0.8.1", features = [ "all-extensions", "cursor" ] }
+x11rb = { version = "0.8.1", features = [ "all-extensions", "cursor", "resource_manager",  ] }
 legion = "0.4.0"

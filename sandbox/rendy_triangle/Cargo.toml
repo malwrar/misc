@@ -1,0 +1,18 @@
+[package]
+name = "rendy_triangle"
+version = "0.1.0"
+authors = [ "malwrar" ]
+edition = "2018"
+
+[features]
+
+[dependencies]
+log = "0.4.0"
+env_logger = "0.8.3"
+lazy_static = "1.4.0"
+rendy-core = "0.5.1"
+rendy-shader = "0.5.1"
+
+[dependencies.rendy]
+version = "0.5.1"
+features = ["base", "vulkan", "init-winit", "texture-image", "shader-compiler"]

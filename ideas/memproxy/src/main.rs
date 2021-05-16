@@ -65,6 +65,9 @@ fn main() {
     let target5: Pointer<i32> = scan::value(address_space, 1337)?;
 
     loop {
+        // Nothing has been read yet, this will attempt one that will panic if not successful.
+        let a = *target1;
+
         // Copy all data in the remote address space pointed to by the above pointers to our local cache
         address_space.read()?;
 
