@@ -38,7 +38,7 @@ $EndComp
 Wire Wire Line
 	3250 2100 3250 1900
 Wire Wire Line
-	5850 4400 5850 4700
+	5850 4350 5850 4700
 Wire Wire Line
 	5850 4700 3750 4700
 Wire Wire Line
@@ -96,15 +96,7 @@ Wire Wire Line
 Wire Wire Line
 	5450 3550 4850 3550
 Wire Wire Line
-	4850 3550 4850 2500
-Wire Wire Line
-	4850 2500 4250 2500
-Wire Wire Line
-	5450 3650 4750 3650
-Wire Wire Line
-	4750 3650 4750 2600
-Wire Wire Line
-	4750 2600 4250 2600
+	4850 3550 4850 3200
 $Comp
 L power:Earth #PWR?
 U 1 1 609D2FFC
@@ -122,17 +114,6 @@ Wire Wire Line
 	6350 3450 6600 3450
 Wire Wire Line
 	6450 1800 6450 2050
-$Comp
-L Device:CP C?
-U 1 1 609DE0DB
-P 6250 2050
-F 0 "C?" V 6505 2050 50  0000 C CNN
-F 1 "100 uF" V 6414 2050 50  0000 C CNN
-F 2 "" H 6288 1900 50  0001 C CNN
-F 3 "~" H 6250 2050 50  0001 C CNN
-	1    6250 2050
-	0    -1   -1   0   
-$EndComp
 Wire Wire Line
 	6100 2050 6050 2050
 Connection ~ 6050 2050
@@ -143,4 +124,19 @@ Wire Wire Line
 Connection ~ 6450 2050
 Wire Wire Line
 	6450 2050 6450 4350
+$Comp
+L Device:CP1 CP1
+U 1 1 60AB2F0A
+P 6250 2050
+F 0 "CP1" V 6502 2050 50  0000 C CNN
+F 1 "100uF" V 6411 2050 50  0000 C CNN
+F 2 "" H 6250 2050 50  0001 C CNN
+F 3 "~" H 6250 2050 50  0001 C CNN
+	1    6250 2050
+	0    -1   -1   0   
+$EndComp
+Wire Wire Line
+	5450 3650 4750 3650
+Wire Wire Line
+	4750 3650 4750 3300
 $EndSCHEMATC
