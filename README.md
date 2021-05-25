@@ -1,17 +1,10 @@
 # misc
 
-Place to put misc things that aren't big enough to warrant their own separate
-repo.
+Place to put things that aren't big enough to warrant their own repo.
 
- * `assets` - Static assets (graphics, textures, visualizations, 3d models, etc)
-              that I've made or require elsewhere in this repo.
- * `embedded` - Toolchains and experiments with embedded development boards.
- * `ideas` - Small-scale explorations of random ideas I come up with.
- * `sandbox` -  Place for fast-paced tinkering with libraries, engines,
-                frameworks, etc.
- * `snippets` - Bits of code I might want to use later that don't fit in a
-                standalone library.
- * `tests` - Stuff for learning what happens when edge-cases are hit and limits are
-             reached. Also has benchmarks and speed tests.
- * `tools` - Small scripts and tools that I use.
- * `trash` - Things takes up space here that I also don't want to delete.
+- `benchmarks/` - Testbeds to see how fast stuff is.
+- `experiments` - Answers to my questions about if & how stuff works.
+- `ideas` - Small PoCs for the misc ideas I come up with.
+- `sandbox` - Envs to mess around with libraries, tools, dev boards, etc.
+- `tools` - Small tools I've made, probable graduates to actual projects.
+- `trash` - Things idk where else to put.

@@ -1,5 +1,5 @@
 [package]
-name = "xcb_legion_glx"
+name = "xcb_legion_rendy"
 version = "0.1.0"
 edition = "2018"
 

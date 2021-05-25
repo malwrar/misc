@@ -12,7 +12,6 @@ use x11rb::wrapper::ConnectionExt as _;
 use x11rb::resource_manager::Database;
 use x11rb::COPY_DEPTH_FROM_PARENT;
 
-
 fn main() {
     env_logger::Builder::from_default_env()
         .filter_level(log::LevelFilter::Debug)
