@@ -63,9 +63,16 @@ class CascadeDetector(Detector):
 #    def process_frame(self, frame):
 #        pass
 
-assets_base = Path(__file__).parent.absolute() / 'assets'
+cv2.namedWindow('facedetector')
+cv2.createTrackbar('Threshold 1', canny, 0, 255, nothing)
+cv2.createTrackbar('Threshold 2', canny, 0, 255, nothing)
 
-camera = cv2.VideoCapture("v4l2src device=/dev/video0 ! video/x-raw,format=YUY2,width=640,height=480,framerate=30/1 ! videoconvert ! video/x-raw, format=BGR ! appsink drop=1 ", cv2.CAP_GSTREAMER)
+#camera = cv2.VideoCapture("v4l2src device=/dev/video0 ! video/x-raw,format=YUY2,width=640,height=480,framerate=30/1 ! videoconvert ! video/x-raw, format=BGR ! appsink drop=1 ", cv2.CAP_GSTREAMER)
+camera = cv2.VideoCapture(2)
+camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+assets_base = Path(__file__).parent.absolute() / 'assets'
 
 detectors = [
     CascadeDetector(Color(1.0, 0, 0),
@@ -85,12 +92,14 @@ detectors = [
 while True:
     _, frame = camera.read()
 
-    for detector in detectors:
-        faces = detector.process_frame(frame)
-        for (x_start, y_start, x_end, y_end) in faces:
-            cv2.rectangle(frame, (x_start, y_start), (x_end, y_end),
-                    detector.color.to_tuple(), 2)
+    #for detector in detectors:
+    #    faces = detector.process_frame(frame)
+    #    for (x_start, y_start, x_end, y_end) in faces:
+    #        cv2.rectangle(frame, (x_start, y_start), (x_end, y_end),
+    #                detector.color.to_tuple(), 2)
+    can = cv2.Canny(gb, t1)
             
+    cv2.imshow('frame', frame)
     cv2.imshow('frame', frame)
     if cv2.waitKey(1) == ord('q'):
         break
